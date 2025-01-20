@@ -62,7 +62,7 @@ $app->post('/upload-zip', function (Request $request) use ($app) {
 
         if ($zip->open($zipFilePath) === TRUE) {
             $imageUrls = [];
-            
+
             for ($i = 0; $i < $zip->numFiles; $i++) {
                 $zipFile = $zip->getNameIndex($i);
                 $tempFile = tempnam(sys_get_temp_dir(), 'img_');
@@ -92,14 +92,14 @@ $app->post('/upload-zip', function (Request $request) use ($app) {
             throw new Exception('Failed to open the ZIP file. Please try again later.');
         }
     } catch (Exception $e) {
-        error_log('Error processing ZIP file: ' . $e->getMessage());
         return new Response('An error occurred while processing the ZIP file: ' . $e->getMessage(), 500);
     }
 });
 
 // Handle frontend HTML, CSS, and JS
 $app->get('/', function () use ($app) {
-    return new Response(<<<HTML
+    return new Response(
+        <<<HTML
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -133,69 +133,94 @@ $app->get('/', function () use ($app) {
     </style>
 </head>
 <body>
-    <h1>Upload an Image</h1>
-    <form id="uploadForm" action="/upload-1-by-1" method="post" enctype="multipart/form-data">
-        <label for="file">Select an image:</label>
-        <input type="file" name="file" id="file" required>
-        <button type="submit">Upload</button>
-    </form>
+<h1>Upload an Image</h1>
+<form id="upload1by1Form" method="post" action="upload-1-by-1" enctype="multipart/form-data">
+    <label for="file1">Select an image:</label>
+    <input type="file" name="file" id="file1" required>
+    <button type="submit">Upload</button>
+</form>
 
-    <div id="popup">
-        <p id="popupMessage"></p>
-        <button onclick="closePopup()">Close</button>
-    </div>
+<h1>Upload a ZIP File</h1>
+<form id="uploadZipForm" method="post" action="upload-zip" enctype="multipart/form-data">
+    <label for="file2">Select a ZIP file:</label>
+    <input type="file" name="file" id="file2" required>
+    <button type="submit">Upload</button>
+</form>
 
-    <script>
-        const form = document.getElementById('uploadForm');
-        const popup = document.getElementById('popup');
-        const popupMessage = document.getElementById('popupMessage');
-    
-        form.addEventListener('submit', async function (e) {
-            e.preventDefault();
-    
-            const formData = new FormData(form);
-            const file = formData.get('file');
-            const isZipFile = file && file.name.endsWith('.zip');
-            const uploadUrl = isZipFile ? '/upload-zip' : '/upload-1-by-1'; 
-    
-            try {
-                const response = await fetch(uploadUrl, {
-                    method: 'POST',
-                    body: formData
-                });
-    
-                if (!response.ok) {
-                    const errorMessage = await response.text();
-                    showPopup(errorMessage, "#FFCDD2", "#D32F2F");
+<div id="popup">
+    <p id="popupMessage"></p>
+    <button onclick="closePopup()">Close</button>
+</div>
+
+<script>
+    // Popup logic
+    const popup = document.getElementById('popup');
+    const popupMessage = document.getElementById('popupMessage');
+
+    function showPopup(message, bgColor, textColor) {
+        popupMessage.innerHTML = message;
+        popup.style.display = 'block';
+        popup.style.backgroundColor = bgColor;
+        popup.style.borderColor = bgColor;
+        popup.style.color = textColor;
+    }
+
+    function closePopup() {
+        popup.style.display = 'none';
+    }
+
+    // Function to handle form submissions
+    async function handleFormSubmit(event, formId, uploadUrl, isZipFile) {
+        event.preventDefault();
+
+        const form = document.getElementById(formId);
+        const fileInput = form.querySelector('input[type="file"]');
+        const formData = new FormData(form);
+        const file = fileInput.files[0];
+
+        if (!file) {
+            showPopup("No file selected.", "#FFCDD2", "#D32F2F");
+            return;
+        }
+
+        try {
+            const response = await fetch(uploadUrl, {
+                method: 'POST',
+                body: formData,
+            });
+
+            if (!response.ok) {
+                const errorMessage = await response.text();
+                showPopup(errorMessage, "#FFCDD2", "#D32F2F");
+            } else {
+                const result = await response.json();
+                let message = '';
+                if (isZipFile) {
+                    const imageLinks = result.urls.map(function (url) {
+                        return '<a href="' + url + '" target="_blank">' + url + '</a>';
+                    }).join("<br>");
+                    message = "Images uploaded successfully! View them at:<br>" + imageLinks;
                 } else {
-                    const result = await response.json();
-                    let message = '';
-                    if (isZipFile) {
-                        const imageLinks = result.urls.map(url => `${url}`).join("\n");
-                        message = `Images uploaded successfully! View them at: \n${imageLinks}`;
-                    } else {
-                        message = `Image uploaded successfully! View it at: <a href="${result.url}" target="_blank">${result.url}</a>`;
-                    }
-                    showPopup(message, "#E8F5E9", "#388E3C");
-                    form.reset();
+                    message = 'Image uploaded successfully! View it at: <a href="' + result.url + '" target="_blank">' + result.url + '</a>';
                 }
-            } catch (error) {
-                showPopup(error, "#FFCDD2", "#D32F2F");
+                showPopup(message, "#E8F5E9", "#388E3C");
+                form.reset();
             }
-        });
-    
-        function showPopup(message, bgColor, textColor) {
-            popupMessage.textContent = message;
-            popup.style.display = 'block';
-            popup.style.backgroundColor = bgColor; 
-            popup.style.borderColor = bgColor
-            popup.style.color = textColor;
+        } catch (error) {
+            showPopup(error.message, "#FFCDD2", "#D32F2F");
         }
-    
-        function closePopup() {
-            popup.style.display = 'none';
-        }
-    </script>
+    }
+
+    // Attach event listeners for each form
+    document.getElementById('upload1by1Form').addEventListener('submit', function (event) {
+        handleFormSubmit(event, 'upload1by1Form', '/upload-1-by-1', false);
+    });
+
+    document.getElementById('uploadZipForm').addEventListener('submit', function (event) {
+        handleFormSubmit(event, 'uploadZipForm', '/upload-zip', true);
+    });
+</script>
+
 </body>
 </html>
 HTML
@@ -204,4 +229,3 @@ HTML
 
 // Start the application
 $app->run();
-?>
